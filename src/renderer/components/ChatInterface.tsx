@@ -1097,12 +1097,15 @@ const ChatInterface: React.FC<Props> = ({
                 <div className="ml-auto flex flex-shrink-0 items-center gap-2">
                   {(task.metadata?.linearIssue ||
                     task.metadata?.githubIssue ||
-                    task.metadata?.jiraIssue) && (
+                    task.metadata?.jiraIssue ||
+                    (task.metadata?.agentPresets &&
+                      Object.keys(task.metadata.agentPresets).length > 0)) && (
                     <TaskContextBadges
                       taskId={task.id}
                       linearIssue={task.metadata?.linearIssue || null}
                       githubIssue={task.metadata?.githubIssue || null}
                       jiraIssue={task.metadata?.jiraIssue || null}
+                      agentPresets={task.metadata?.agentPresets || null}
                     />
                   )}
                   {autoApproveEnabled && (

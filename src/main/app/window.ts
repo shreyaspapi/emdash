@@ -6,6 +6,12 @@ import { ensureRendererServer } from './staticServer';
 
 let mainWindow: BrowserWindow | null = null;
 
+function getDevRendererUrl(): string {
+  return (
+    process.env.EMDASH_RENDERER_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:3000'
+  );
+}
+
 export function createMainWindow(): BrowserWindow {
   // In development, resolve icon from src/assets
   // In production (packaged), electron-builder handles the icon
@@ -35,7 +41,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    mainWindow.loadURL(getDevRendererUrl());
   } else {
     // Serve renderer over an HTTP origin in production so embeds work.
     const rendererRoot = join(app.getAppPath(), 'dist', 'renderer');

@@ -1,13 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Info, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { ChevronDown, Info, Plus, RotateCcw, Shield, Timer, Trash2, X, Zap } from 'lucide-react';
 import { PROVIDERS, type ProviderDefinition, type ProviderId } from '@shared/providers/registry';
 import type { ProviderCustomConfig } from '@shared/providers/customConfig';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import {
+  applyModelToArgs,
+  extractModelFromArgs,
+  getModelOptions,
+  getTemplateModel,
+  isLikelyFlagSequence,
+  sanitizePresetConfig,
+  stripUnsafeFlags,
+  type PresetTemplateId,
+} from '../lib/taskAgentPresetUtils';
 
 type EnvEntry = { key: string; value: string };
 
@@ -94,15 +106,15 @@ const buildConfigFromForm = (
     }
   }
 
-  return {
+  return sanitizePresetConfig({
     cli: form.cli,
     resumeFlag: form.resumeFlag,
     defaultArgs: form.defaultArgs,
-    extraArgs: form.extraArgs.trim() || undefined,
+    extraArgs: form.extraArgs,
     autoApproveFlag: form.autoApproveFlag,
     initialPromptFlag: form.initialPromptFlag,
     env: Object.keys(envRecord).length > 0 ? envRecord : undefined,
-  };
+  });
 };
 
 export default function TaskAgentPresetsModal({
@@ -246,7 +258,93 @@ export default function TaskAgentPresetsModal({
     [defaultsByAgent, formsByAgent, normalizedAgentIds]
   );
 
+  const [showAdvancedSection, setShowAdvancedSection] = useState(false);
+  const [useCustomModel, setUseCustomModel] = useState(false);
+
+  const modelOptions = useMemo(
+    () => (selectedAgentId ? getModelOptions(selectedAgentId) : []),
+    [selectedAgentId]
+  );
+
+  const modelValue = useMemo(() => {
+    if (!selectedAgentId || !selectedForm) return '';
+    return extractModelFromArgs(selectedAgentId, selectedForm.defaultArgs);
+  }, [selectedAgentId, selectedForm]);
+
+  useEffect(() => {
+    const isCustomModel = !!modelValue && !modelOptions.includes(modelValue);
+    setUseCustomModel(isCustomModel);
+  }, [modelOptions, modelValue]);
+
+  const envKeyErrors = useMemo(() => {
+    if (!selectedForm) return [];
+    return selectedForm.envEntries.map((entry) => {
+      const key = entry.key.trim();
+      if (!key) return '';
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return '';
+      return 'Use letters, numbers, and underscores only. Must not start with a number.';
+    });
+  }, [selectedForm]);
+
+  const flagValidationErrors = useMemo(() => {
+    if (!selectedForm) return { resumeFlag: '', autoApproveFlag: '', initialPromptFlag: '' };
+    return {
+      resumeFlag: isLikelyFlagSequence(selectedForm.resumeFlag)
+        ? ''
+        : 'Resume flag should contain flag tokens (for example: -c -r).',
+      autoApproveFlag: isLikelyFlagSequence(selectedForm.autoApproveFlag)
+        ? ''
+        : 'Auto-approve flag should contain flag tokens.',
+      initialPromptFlag: isLikelyFlagSequence(selectedForm.initialPromptFlag)
+        ? ''
+        : 'Initial prompt flag should contain flag tokens.',
+    };
+  }, [selectedForm]);
+
+  const hasValidationErrors = useMemo(
+    () =>
+      envKeyErrors.some(Boolean) ||
+      Boolean(flagValidationErrors.resumeFlag) ||
+      Boolean(flagValidationErrors.autoApproveFlag) ||
+      Boolean(flagValidationErrors.initialPromptFlag),
+    [envKeyErrors, flagValidationErrors]
+  );
+
+  const applyTemplate = useCallback(
+    (templateId: PresetTemplateId) => {
+      if (!selectedAgentId) return;
+      updateSelectedForm((current) => {
+        const templateModel = getTemplateModel(selectedAgentId, templateId);
+        const nextDefaultArgs = templateModel
+          ? applyModelToArgs(selectedAgentId, current.defaultArgs, templateModel)
+          : current.defaultArgs;
+        if (templateId === 'safe') {
+          return {
+            ...current,
+            defaultArgs: nextDefaultArgs,
+            extraArgs: stripUnsafeFlags(current.extraArgs),
+            autoApproveFlag: '',
+          };
+        }
+        if (templateId === 'fast') {
+          return {
+            ...current,
+            defaultArgs: nextDefaultArgs,
+            extraArgs: current.extraArgs,
+          };
+        }
+        return {
+          ...current,
+          defaultArgs: nextDefaultArgs,
+        };
+      });
+    },
+    [selectedAgentId, updateSelectedForm]
+  );
+
   const handleSave = useCallback(() => {
+    if (hasValidationErrors) return;
+
     const nextValue: ProviderPresetMap = {};
     for (const agentId of normalizedAgentIds) {
       const defaults = defaultsByAgent[agentId];
@@ -257,7 +355,7 @@ export default function TaskAgentPresetsModal({
     }
     onSave(nextValue);
     onClose();
-  }, [defaultsByAgent, formsByAgent, normalizedAgentIds, onClose, onSave]);
+  }, [defaultsByAgent, formsByAgent, hasValidationErrors, normalizedAgentIds, onClose, onSave]);
 
   const previewCommand = useMemo(() => {
     if (!selectedForm) return '';
@@ -292,7 +390,7 @@ export default function TaskAgentPresetsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-agent-presets-title"
-        className="fixed inset-0 z-[130] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+        className="pointer-events-auto fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
         initial={shouldReduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
@@ -386,124 +484,7 @@ export default function TaskAgentPresetsModal({
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <Field
-                    label="CLI Command"
-                    tooltip="The CLI command to execute (for example: codex)"
-                  >
-                    <Input
-                      value={selectedForm.cli}
-                      onChange={(event) => handleChange('cli', event.target.value)}
-                      placeholder={selectedDefaults.cli || 'CLI command'}
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Resume Flag"
-                    tooltip="Flag used when resuming a session (for example: -c -r)"
-                  >
-                    <Input
-                      value={selectedForm.resumeFlag}
-                      onChange={(event) => handleChange('resumeFlag', event.target.value)}
-                      placeholder={selectedDefaults.resumeFlag || '(none)'}
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Default Args"
-                    tooltip="Default arguments such as model selection flags"
-                  >
-                    <Input
-                      value={selectedForm.defaultArgs}
-                      onChange={(event) => handleChange('defaultArgs', event.target.value)}
-                      placeholder={selectedDefaults.defaultArgs || '(none)'}
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Additional Parameters"
-                    tooltip="Extra flags appended to the command for this task only"
-                  >
-                    <Input
-                      value={selectedForm.extraArgs}
-                      onChange={(event) => handleChange('extraArgs', event.target.value)}
-                      placeholder="e.g. --model gpt-5 --enable-feature"
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm font-medium">Environment variables</Label>
-                      <FieldTooltip content="Environment variables set when running this agent for the task" />
-                    </div>
-                    <div className="space-y-2">
-                      {selectedForm.envEntries.map((entry, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Input
-                            value={entry.key}
-                            onChange={(event) => setEnvEntry(index, { key: event.target.value })}
-                            placeholder="KEY"
-                            className="min-w-0 flex-1 font-mono text-sm"
-                          />
-                          <Input
-                            value={entry.value}
-                            onChange={(event) => setEnvEntry(index, { value: event.target.value })}
-                            placeholder="value"
-                            className="min-w-0 flex-1 font-mono text-sm"
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeEnvEntry(index)}
-                            className="h-8 w-8 shrink-0"
-                            aria-label="Remove"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addEnvEntry}
-                        className="gap-1.5"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Add variable
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Field
-                    label="Auto-approve Flag"
-                    tooltip="Flag used when task auto-approve is enabled"
-                  >
-                    <Input
-                      value={selectedForm.autoApproveFlag}
-                      onChange={(event) => handleChange('autoApproveFlag', event.target.value)}
-                      placeholder={selectedDefaults.autoApproveFlag || '(none)'}
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Initial Prompt Flag"
-                    tooltip="Flag for passing the initial prompt; leave empty to pass the prompt directly"
-                  >
-                    <Input
-                      value={selectedForm.initialPromptFlag}
-                      onChange={(event) => handleChange('initialPromptFlag', event.target.value)}
-                      placeholder={selectedDefaults.initialPromptFlag || '(pass directly)'}
-                      className="font-mono text-sm"
-                    />
-                  </Field>
-
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                  <div className="sticky top-0 z-10 rounded-lg border border-border/60 bg-background/95 p-4 shadow-sm backdrop-blur-sm">
                     <div className="mb-2 text-xs font-medium text-muted-foreground">
                       Command preview
                     </div>
@@ -511,6 +492,286 @@ export default function TaskAgentPresetsModal({
                       {previewCommand}
                     </code>
                   </div>
+
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <div className="mb-2 text-xs font-medium text-muted-foreground">
+                      Starter templates
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => applyTemplate('safe')}
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        Safe
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => applyTemplate('fast')}
+                      >
+                        <Timer className="h-3.5 w-3.5" />
+                        Fast
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => applyTemplate('deep')}
+                      >
+                        <Zap className="h-3.5 w-3.5" />
+                        Deep
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 rounded-lg border border-border/60 p-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Basic
+                    </p>
+                    <Field
+                      label="Model"
+                      tooltip="Select a suggested model, or enter a custom model id"
+                    >
+                      <div className="space-y-2">
+                        <Select
+                          value={
+                            !modelValue ? '__inherit__' : useCustomModel ? '__custom__' : modelValue
+                          }
+                          onValueChange={(value) => {
+                            if (!selectedAgentId) return;
+                            if (value === '__inherit__') {
+                              setUseCustomModel(false);
+                              updateSelectedForm((current) => ({
+                                ...current,
+                                defaultArgs: applyModelToArgs(
+                                  selectedAgentId,
+                                  current.defaultArgs,
+                                  ''
+                                ),
+                              }));
+                              return;
+                            }
+                            if (value === '__custom__') {
+                              setUseCustomModel(true);
+                              return;
+                            }
+                            setUseCustomModel(false);
+                            updateSelectedForm((current) => ({
+                              ...current,
+                              defaultArgs: applyModelToArgs(
+                                selectedAgentId,
+                                current.defaultArgs,
+                                value
+                              ),
+                            }));
+                          }}
+                        >
+                          <SelectTrigger className="font-mono text-sm">
+                            <SelectValue placeholder="Inherit model" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__inherit__">Inherit global model</SelectItem>
+                            {modelOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="__custom__">Custom model…</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {useCustomModel ? (
+                          <Input
+                            value={modelValue}
+                            onChange={(event) => {
+                              if (!selectedAgentId) return;
+                              updateSelectedForm((current) => ({
+                                ...current,
+                                defaultArgs: applyModelToArgs(
+                                  selectedAgentId,
+                                  current.defaultArgs,
+                                  event.target.value
+                                ),
+                              }));
+                            }}
+                            placeholder="Enter custom model id"
+                            className="font-mono text-sm"
+                          />
+                        ) : null}
+                      </div>
+                    </Field>
+
+                    <Field
+                      label="Additional Parameters"
+                      tooltip="Extra flags appended to the command for this task only"
+                    >
+                      <Input
+                        value={selectedForm.extraArgs}
+                        onChange={(event) => handleChange('extraArgs', event.target.value)}
+                        placeholder="e.g. --sandbox workspace-write"
+                        className="font-mono text-sm"
+                      />
+                    </Field>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium">Environment variables</Label>
+                        <FieldTooltip content="Environment variables set when running this agent for the task" />
+                      </div>
+                      <div className="space-y-2">
+                        {selectedForm.envEntries.map((entry, index) => (
+                          <div key={index} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={entry.key}
+                                onChange={(event) =>
+                                  setEnvEntry(index, { key: event.target.value })
+                                }
+                                placeholder="KEY"
+                                className="min-w-0 flex-1 font-mono text-sm"
+                              />
+                              <Input
+                                value={entry.value}
+                                onChange={(event) =>
+                                  setEnvEntry(index, { value: event.target.value })
+                                }
+                                placeholder="value"
+                                className="min-w-0 flex-1 font-mono text-sm"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeEnvEntry(index)}
+                                className="h-8 w-8 shrink-0"
+                                aria-label="Remove"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                            {envKeyErrors[index] ? (
+                              <p className="text-xs text-destructive">{envKeyErrors[index]}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addEnvEntry}
+                          className="gap-1.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add variable
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Accordion
+                    type="single"
+                    collapsible
+                    value={showAdvancedSection ? 'advanced' : undefined}
+                    onValueChange={(value) => setShowAdvancedSection(value === 'advanced')}
+                  >
+                    <AccordionItem
+                      value="advanced"
+                      className="rounded-lg border border-border/60 px-4"
+                    >
+                      <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
+                        <span className="inline-flex items-center gap-2">
+                          Advanced overrides
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        </span>
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-4 pb-4">
+                        <Field
+                          label="CLI Command"
+                          tooltip="The CLI command to execute (for example: codex)"
+                        >
+                          <Input
+                            value={selectedForm.cli}
+                            onChange={(event) => handleChange('cli', event.target.value)}
+                            placeholder={selectedDefaults.cli || 'CLI command'}
+                            className="font-mono text-sm"
+                          />
+                        </Field>
+
+                        <Field
+                          label="Resume Flag"
+                          tooltip="Flag used when resuming a session (for example: -c -r)"
+                        >
+                          <Input
+                            value={selectedForm.resumeFlag}
+                            onChange={(event) => handleChange('resumeFlag', event.target.value)}
+                            placeholder={selectedDefaults.resumeFlag || '(none)'}
+                            className="font-mono text-sm"
+                          />
+                          {flagValidationErrors.resumeFlag ? (
+                            <p className="mt-1 text-xs text-destructive">
+                              {flagValidationErrors.resumeFlag}
+                            </p>
+                          ) : null}
+                        </Field>
+
+                        <Field
+                          label="Default Args (raw)"
+                          tooltip="Raw default argument string (model is usually managed above)"
+                        >
+                          <Input
+                            value={selectedForm.defaultArgs}
+                            onChange={(event) => handleChange('defaultArgs', event.target.value)}
+                            placeholder={selectedDefaults.defaultArgs || '(none)'}
+                            className="font-mono text-sm"
+                          />
+                        </Field>
+
+                        <Field
+                          label="Auto-approve Flag"
+                          tooltip="Flag used when task auto-approve is enabled"
+                        >
+                          <Input
+                            value={selectedForm.autoApproveFlag}
+                            onChange={(event) =>
+                              handleChange('autoApproveFlag', event.target.value)
+                            }
+                            placeholder={selectedDefaults.autoApproveFlag || '(none)'}
+                            className="font-mono text-sm"
+                          />
+                          {flagValidationErrors.autoApproveFlag ? (
+                            <p className="mt-1 text-xs text-destructive">
+                              {flagValidationErrors.autoApproveFlag}
+                            </p>
+                          ) : null}
+                        </Field>
+
+                        <Field
+                          label="Initial Prompt Flag"
+                          tooltip="Flag for passing the initial prompt; leave empty to pass prompt directly"
+                        >
+                          <Input
+                            value={selectedForm.initialPromptFlag}
+                            onChange={(event) =>
+                              handleChange('initialPromptFlag', event.target.value)
+                            }
+                            placeholder={selectedDefaults.initialPromptFlag || '(pass directly)'}
+                            className="font-mono text-sm"
+                          />
+                          {flagValidationErrors.initialPromptFlag ? (
+                            <p className="mt-1 text-xs text-destructive">
+                              {flagValidationErrors.initialPromptFlag}
+                            </p>
+                          ) : null}
+                        </Field>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 </div>
               )}
             </div>
@@ -535,7 +796,7 @@ export default function TaskAgentPresetsModal({
                   type="button"
                   size="sm"
                   onClick={handleSave}
-                  disabled={loading || !hasChanges}
+                  disabled={loading || !hasChanges || hasValidationErrors}
                 >
                   Save presets
                 </Button>

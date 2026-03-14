@@ -1,5 +1,11 @@
 import { BrowserWindow, shell } from 'electron';
 
+function getDevRendererUrl(): string {
+  return (
+    process.env.EMDASH_RENDERER_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:3000'
+  );
+}
+
 /**
  * Ensure any external HTTP(S) links open in the user’s default browser
  * rather than inside the Electron window. Keeps app navigation scoped
@@ -9,7 +15,7 @@ export function registerExternalLinkHandlers(win: BrowserWindow, isDev: boolean)
   const wc = win.webContents;
 
   const isInternalAppUrl = (url: string) => {
-    if (isDev) return url.startsWith('http://localhost:3000');
+    if (isDev) return url.startsWith(getDevRendererUrl());
     return url.startsWith('file://') || /^http:\/\/(127\.0\.0\.1|localhost):\d+(?:\/|$)/i.test(url);
   };
 

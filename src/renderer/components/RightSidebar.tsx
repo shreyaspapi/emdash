@@ -11,6 +11,7 @@ import { TaskScopeProvider, useTaskScope } from './TaskScopeContext';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from './ui/resizable';
 import { RIGHT_SIDEBAR_VERTICAL_STORAGE_KEY } from '@/constants/layout';
+import { getPresetSummaries } from '../lib/taskAgentPresetUtils';
 
 export interface RightSidebarTask {
   id: string;
@@ -339,29 +340,34 @@ const SingleTaskSidebar: React.FC<{
   onOpenChanges,
 }) => {
   return (
-    <ResizablePanelGroup direction="vertical" autoSaveId={RIGHT_SIDEBAR_VERTICAL_STORAGE_KEY}>
-      <ResizablePanel defaultSize={50} minSize={20}>
-        <FileChangesPanel className="h-full min-h-0" onOpenChanges={onOpenChanges} />
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel defaultSize={50} minSize={20}>
-        <TaskTerminalPanel
-          task={task}
-          agent={task.agentId as Agent}
-          projectPath={projectPath || task?.path}
-          remote={
-            projectRemoteConnectionId
-              ? {
-                  connectionId: projectRemoteConnectionId,
-                  projectPath: projectRemotePath || projectPath || undefined,
-                }
-              : undefined
-          }
-          defaultBranch={projectDefaultBranch || undefined}
-          className="h-full min-h-0"
-        />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+    <div className="flex h-full min-h-0 flex-col">
+      <TaskPresetSettingsSummary task={task} />
+      <div className="min-h-0 flex-1">
+        <ResizablePanelGroup direction="vertical" autoSaveId={RIGHT_SIDEBAR_VERTICAL_STORAGE_KEY}>
+          <ResizablePanel defaultSize={50} minSize={20}>
+            <FileChangesPanel className="h-full min-h-0" onOpenChanges={onOpenChanges} />
+          </ResizablePanel>
+          <ResizableHandle />
+          <ResizablePanel defaultSize={50} minSize={20}>
+            <TaskTerminalPanel
+              task={task}
+              agent={task.agentId as Agent}
+              projectPath={projectPath || task?.path}
+              remote={
+                projectRemoteConnectionId
+                  ? {
+                      connectionId: projectRemoteConnectionId,
+                      projectPath: projectRemotePath || projectPath || undefined,
+                    }
+                  : undefined
+              }
+              defaultBranch={projectDefaultBranch || undefined}
+              className="h-full min-h-0"
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
+    </div>
   );
 };
 
@@ -376,5 +382,43 @@ const VariantChangesIfAny: React.FC<{
     <TaskScopeProvider value={{ taskId, taskPath: path, projectPath }}>
       <FileChangesPanel className={className || 'min-h-0'} onOpenChanges={onOpenChanges} />
     </TaskScopeProvider>
+  );
+};
+
+const TaskPresetSettingsSummary: React.FC<{ task: RightSidebarTask }> = ({ task }) => {
+  const presetSummaries = React.useMemo(
+    () => getPresetSummaries(task.metadata?.agentPresets),
+    [task.metadata?.agentPresets]
+  );
+  const autoApprove = Boolean(task.metadata?.autoApprove);
+
+  if (!autoApprove && presetSummaries.length === 0) return null;
+
+  return (
+    <div className="border-b border-border/60 bg-muted/10 px-3 py-2">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Task settings
+      </div>
+      <div className="space-y-1 text-xs text-muted-foreground">
+        <div>
+          <span className="font-medium text-foreground">Auto-approve:</span>{' '}
+          {autoApprove ? 'Enabled' : 'Disabled'}
+        </div>
+        <div>
+          <span className="font-medium text-foreground">Agent presets:</span>{' '}
+          {presetSummaries.length > 0
+            ? `${presetSummaries.length} configured`
+            : 'Inherited defaults'}
+        </div>
+        {presetSummaries.map((summary) => (
+          <div key={summary.providerId} className="pl-2">
+            {summary.providerName}
+            {summary.model ? ` • ${summary.model}` : ''}
+            {summary.extraArgs ? ` • ${summary.extraArgs}` : ''}
+            {summary.envCount > 0 ? ` • ${summary.envCount} env` : ''}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 };

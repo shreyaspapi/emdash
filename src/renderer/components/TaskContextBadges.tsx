@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, MessageSquare } from 'lucide-react';
+import { ExternalLink, MessageSquare, SlidersHorizontal } from 'lucide-react';
 import { type LinearIssueSummary } from '../types/linear';
 import { type GitHubIssueSummary } from '../types/github';
 import { type JiraIssueSummary } from '../types/jira';
@@ -12,12 +12,16 @@ import linearLogoSvg from '../../assets/images/Linear.svg?raw';
 import githubLogo from '../../assets/images/github.png';
 import jiraLogo from '../../assets/images/jira.png';
 import AgentLogo from './AgentLogo';
+import type { ProviderCustomConfig } from '@shared/providers/customConfig';
+import type { ProviderId } from '@shared/providers/registry';
+import { getPresetSummaries } from '../lib/taskAgentPresetUtils';
 
 type Props = {
   taskId?: string;
   linearIssue?: LinearIssueSummary | null;
   githubIssue?: GitHubIssueSummary | null;
   jiraIssue?: JiraIssueSummary | null;
+  agentPresets?: Partial<Record<ProviderId, ProviderCustomConfig>> | null;
 };
 
 export const TaskContextBadges: React.FC<Props> = ({
@@ -25,11 +29,13 @@ export const TaskContextBadges: React.FC<Props> = ({
   linearIssue,
   githubIssue,
   jiraIssue,
+  agentPresets,
 }) => {
   const { taskId: scopedTaskId } = useTaskScope();
   const resolvedTaskId = taskId ?? scopedTaskId;
   const { unsentCount } = useTaskComments(resolvedTaskId);
   const [selectedCount, setSelectedCount] = React.useState(0);
+  const presetSummaries = React.useMemo(() => getPresetSummaries(agentPresets), [agentPresets]);
 
   React.useEffect(() => {
     setSelectedCount(0);
@@ -185,6 +191,37 @@ export const TaskContextBadges: React.FC<Props> = ({
                     </div>
                   )}
                 </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+
+      {presetSummaries.length > 0 && (
+        <TooltipProvider delayDuration={250}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground dark:border-border dark:bg-muted"
+                aria-label={`${presetSummaries.length} agent preset${presetSummaries.length === 1 ? '' : 's'} configured`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                <span>
+                  {presetSummaries.length} preset{presetSummaries.length === 1 ? '' : 's'}
+                </span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-sm">
+              <div className="space-y-1 text-xs">
+                <p className="font-medium text-foreground">Task agent presets</p>
+                {presetSummaries.map((summary) => (
+                  <p key={summary.providerId} className="text-muted-foreground">
+                    <span className="font-medium text-foreground">{summary.providerName}</span>
+                    {summary.model ? ` • model ${summary.model}` : ''}
+                    {summary.extraArgs ? ` • ${summary.extraArgs}` : ''}
+                    {summary.envCount > 0 ? ` • ${summary.envCount} env` : ''}
+                  </p>
+                ))}
               </div>
             </TooltipContent>
           </Tooltip>

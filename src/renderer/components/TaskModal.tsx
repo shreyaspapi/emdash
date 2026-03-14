@@ -37,6 +37,12 @@ import type { Project } from '../types/app';
 import { useProjectManagementContext } from '../contexts/ProjectManagementProvider';
 import { useTaskManagementContext } from '../contexts/TaskManagementContext';
 import { rpc } from '@/lib/rpc';
+import {
+  applyModelToArgs,
+  extractModelFromArgs,
+  getModelOptions,
+  sanitizePresetConfig,
+} from '../lib/taskAgentPresetUtils';
 
 const DEFAULT_AGENT: Agent = 'claude';
 
@@ -197,6 +203,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
   // Computed values
   const activeAgents = useMemo(() => agentRuns.map((ar) => ar.agent), [agentRuns]);
   const presetAgents = useMemo(() => [...new Set(activeAgents)] as ProviderId[], [activeAgents]);
+  const primaryPresetAgent = presetAgents[0] ?? null;
   const activeAgentSet = useMemo(() => new Set(presetAgents), [presetAgents]);
   const configuredAgentPresetCount = useMemo(
     () =>
@@ -207,6 +214,18 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
   const hasAutoApproveSupport = activeAgents.every((id) => !!agentMeta[id]?.autoApproveFlag);
   const hasInitialPromptSupport = activeAgents.every(
     (id) => agentMeta[id]?.initialPromptFlag !== undefined
+  );
+  const primaryQuickModel = useMemo(() => {
+    if (!primaryPresetAgent) return '';
+    return extractModelFromArgs(primaryPresetAgent, agentPresets[primaryPresetAgent]?.defaultArgs);
+  }, [agentPresets, primaryPresetAgent]);
+  const primaryQuickExtraArgs = useMemo(
+    () => (primaryPresetAgent ? (agentPresets[primaryPresetAgent]?.extraArgs ?? '') : ''),
+    [agentPresets, primaryPresetAgent]
+  );
+  const primaryModelOptions = useMemo(
+    () => (primaryPresetAgent ? getModelOptions(primaryPresetAgent) : []),
+    [primaryPresetAgent]
   );
 
   const normalizedExisting = useMemo(
@@ -254,6 +273,47 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
       return Object.fromEntries(nextEntries) as Partial<Record<ProviderId, ProviderCustomConfig>>;
     });
   }, [activeAgentSet]);
+
+  const updateAgentPreset = useCallback(
+    (
+      providerId: ProviderId,
+      updater: (current: ProviderCustomConfig | undefined) => ProviderCustomConfig | undefined
+    ) => {
+      setAgentPresets((current) => {
+        const next = { ...current };
+        const updated = sanitizePresetConfig(updater(current[providerId]));
+        if (updated) next[providerId] = updated;
+        else delete next[providerId];
+        return next;
+      });
+    },
+    []
+  );
+
+  const handleQuickModelChange = useCallback(
+    (model: string) => {
+      if (!primaryPresetAgent) return;
+      updateAgentPreset(primaryPresetAgent, (current) => {
+        const defaultArgs = applyModelToArgs(primaryPresetAgent, current?.defaultArgs, model);
+        return {
+          ...current,
+          defaultArgs,
+        };
+      });
+    },
+    [primaryPresetAgent, updateAgentPreset]
+  );
+
+  const handleQuickExtraArgsChange = useCallback(
+    (extraArgs: string) => {
+      if (!primaryPresetAgent) return;
+      updateAgentPreset(primaryPresetAgent, (current) => ({
+        ...current,
+        extraArgs,
+      }));
+    },
+    [primaryPresetAgent, updateAgentPreset]
+  );
 
   // Reset form and load settings on mount
   useEffect(() => {
@@ -525,6 +585,12 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
             activeAgents={presetAgents}
             configuredAgentPresetCount={configuredAgentPresetCount}
             onConfigureAgentPresets={() => setAgentPresetModalOpen(true)}
+            primaryPresetAgent={primaryPresetAgent}
+            quickPresetModel={primaryQuickModel}
+            quickPresetModelOptions={primaryModelOptions}
+            quickPresetExtraArgs={primaryQuickExtraArgs}
+            onQuickPresetModelChange={handleQuickModelChange}
+            onQuickPresetExtraArgsChange={handleQuickExtraArgsChange}
             selectedLinearIssue={selectedLinearIssue}
             onLinearIssueChange={setSelectedLinearIssue}
             isLinearConnected={integrations.isLinearConnected}

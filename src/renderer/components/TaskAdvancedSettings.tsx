@@ -1,13 +1,15 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ExternalLink, Settings } from 'lucide-react';
 import type { ProviderId } from '@shared/providers/registry';
 import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
+import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Spinner } from './ui/spinner';
 import { Textarea } from './ui/textarea';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { LinearIssueSelector } from './LinearIssueSelector';
 import { GitHubIssueSelector } from './GitHubIssueSelector';
 import JiraIssueSelector from './JiraIssueSelector';
@@ -47,6 +49,12 @@ interface TaskAdvancedSettingsProps {
   activeAgents: ProviderId[];
   configuredAgentPresetCount: number;
   onConfigureAgentPresets: () => void;
+  primaryPresetAgent: ProviderId | null;
+  quickPresetModel: string;
+  quickPresetModelOptions: string[];
+  quickPresetExtraArgs: string;
+  onQuickPresetModelChange: (value: string) => void;
+  onQuickPresetExtraArgsChange: (value: string) => void;
 
   // Linear
   selectedLinearIssue: LinearIssueSummary | null;
@@ -102,6 +110,12 @@ export const TaskAdvancedSettings: React.FC<TaskAdvancedSettingsProps> = ({
   activeAgents,
   configuredAgentPresetCount,
   onConfigureAgentPresets,
+  primaryPresetAgent,
+  quickPresetModel,
+  quickPresetModelOptions,
+  quickPresetExtraArgs,
+  onQuickPresetModelChange,
+  onQuickPresetExtraArgsChange,
   selectedLinearIssue,
   onLinearIssueChange,
   isLinearConnected,
@@ -132,6 +146,13 @@ export const TaskAdvancedSettings: React.FC<TaskAdvancedSettingsProps> = ({
 }) => {
   const shouldReduceMotion = useReducedMotion();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [useCustomQuickModel, setUseCustomQuickModel] = useState(false);
+
+  useEffect(() => {
+    const isCustomModel =
+      !!quickPresetModel && !quickPresetModelOptions.some((option) => option === quickPresetModel);
+    setUseCustomQuickModel(isCustomModel);
+  }, [quickPresetModel, quickPresetModelOptions]);
 
   // Linear setup state
   const [linearSetupOpen, setLinearSetupOpen] = useState(false);
@@ -485,6 +506,77 @@ export const TaskAdvancedSettings: React.FC<TaskAdvancedSettingsProps> = ({
                         </a>
                       </div>
                     </label>
+                  </div>
+                </div>
+              ) : null}
+
+              {primaryPresetAgent ? (
+                <div className="flex items-start gap-4">
+                  <Label className="w-32 shrink-0 pt-2">Primary preset</Label>
+                  <div className="min-w-0 flex-1 space-y-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                    <p className="text-xs text-muted-foreground">
+                      Common overrides for <span className="font-medium">{primaryPresetAgent}</span>
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-[170px_minmax(0,1fr)]">
+                      <Select
+                        value={
+                          !quickPresetModel
+                            ? '__inherit__'
+                            : useCustomQuickModel
+                              ? '__custom__'
+                              : quickPresetModel
+                        }
+                        onValueChange={(value) => {
+                          if (value === '__inherit__') {
+                            setUseCustomQuickModel(false);
+                            onQuickPresetModelChange('');
+                            return;
+                          }
+                          if (value === '__custom__') {
+                            setUseCustomQuickModel(true);
+                            return;
+                          }
+                          setUseCustomQuickModel(false);
+                          onQuickPresetModelChange(value);
+                        }}
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__inherit__">Inherit model</SelectItem>
+                          {quickPresetModelOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__custom__">Custom model…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {useCustomQuickModel ? (
+                        <Input
+                          value={quickPresetModel}
+                          onChange={(event) => onQuickPresetModelChange(event.target.value)}
+                          placeholder="Enter model id"
+                          className="h-8 font-mono text-xs"
+                        />
+                      ) : (
+                        <Input
+                          value={quickPresetExtraArgs}
+                          onChange={(event) => onQuickPresetExtraArgsChange(event.target.value)}
+                          placeholder="Extra args (optional)"
+                          className="h-8 font-mono text-xs"
+                        />
+                      )}
+                    </div>
+                    {useCustomQuickModel ? (
+                      <Input
+                        value={quickPresetExtraArgs}
+                        onChange={(event) => onQuickPresetExtraArgsChange(event.target.value)}
+                        placeholder="Extra args (optional)"
+                        className="h-8 font-mono text-xs"
+                      />
+                    ) : null}
                   </div>
                 </div>
               ) : null}
