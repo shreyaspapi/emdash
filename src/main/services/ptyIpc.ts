@@ -522,10 +522,25 @@ async function getTaskPresetForPty(
   const parsed = parsePtyId(ptyId);
   if (!parsed || parsed.providerId !== providerId) return undefined;
 
-  const taskId =
-    parsed.kind === 'main'
-      ? parsed.suffix
-      : (await databaseService.getConversationById(parsed.suffix))?.taskId;
+  let taskId: string | undefined;
+
+  if (parsed.kind === 'main') {
+    const directTask = await databaseService.getTaskById(parsed.suffix);
+    if (directTask) {
+      taskId = directTask.id;
+    } else {
+      const tasks = await databaseService.getTasks();
+      const parentTask = tasks.find((task) =>
+        task.metadata?.multiAgent?.variants?.some(
+          (variant: { agent?: string; worktreeId?: string }) =>
+            variant?.agent === providerId && variant?.worktreeId === parsed.suffix
+        )
+      );
+      taskId = parentTask?.id;
+    }
+  } else {
+    taskId = (await databaseService.getConversationById(parsed.suffix))?.taskId;
+  }
 
   if (!taskId) return undefined;
 

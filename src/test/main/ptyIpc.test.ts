@@ -123,6 +123,7 @@ const getProviderRuntimeCliArgsMock = vi.fn((opts: any) => {
 const resolveProviderCommandConfigMock = vi.fn();
 const getTaskByIdMock = vi.fn<(taskId: string) => Promise<any>>(async () => null);
 const getConversationByIdMock = vi.fn<(conversationId: string) => Promise<any>>(async () => null);
+const getTasksMock = vi.fn<() => Promise<any[]>>(async () => []);
 const getPtyMock = vi.fn((id: string) => ptys.get(id));
 const writePtyMock = vi.fn((id: string, data: string) => {
   ptys.get(id)?.write(data);
@@ -248,6 +249,7 @@ vi.mock('../../main/services/TerminalConfigParser', () => ({
 vi.mock('../../main/services/DatabaseService', () => ({
   databaseService: {
     getTaskById: getTaskByIdMock,
+    getTasks: getTasksMock,
     getConversationById: getConversationByIdMock,
   },
 }));
@@ -321,6 +323,7 @@ describe('ptyIpc notification lifecycle', () => {
     codexFindLatestRecentThreadForCwdMock.mockResolvedValue(null);
     codexFindLatestThreadForCwdMock.mockResolvedValue(null);
     getTaskByIdMock.mockResolvedValue(null);
+    getTasksMock.mockResolvedValue([]);
     getConversationByIdMock.mockResolvedValue(null);
   });
 
@@ -677,16 +680,36 @@ describe('ptyIpc notification lifecycle', () => {
   });
 
   it('applies task-scoped presets for multi-agent variant PTY ids', async () => {
-    getTaskByIdMock.mockResolvedValue({
-      id: 'variant-worktree',
-      metadata: {
-        agentPresets: {
-          codex: {
-            defaultArgs: '--model gpt-5-mini',
+    getTaskByIdMock.mockImplementation(async (taskId: string) => {
+      if (taskId === 'task-parent') {
+        return {
+          id: 'task-parent',
+          metadata: {
+            agentPresets: {
+              codex: {
+                defaultArgs: '--model gpt-5-mini',
+              },
+            },
+          },
+        };
+      }
+      return null;
+    });
+    getTasksMock.mockResolvedValue([
+      {
+        id: 'task-parent',
+        metadata: {
+          multiAgent: {
+            variants: [
+              {
+                agent: 'codex',
+                worktreeId: 'variant-worktree',
+              },
+            ],
           },
         },
       },
-    });
+    ]);
 
     const { registerPtyIpc } = await import('../../main/services/ptyIpc');
     registerPtyIpc();
@@ -702,6 +725,8 @@ describe('ptyIpc notification lifecycle', () => {
 
     expect(result?.ok).toBe(true);
     expect(getTaskByIdMock).toHaveBeenCalledWith('variant-worktree');
+    expect(getTasksMock).toHaveBeenCalled();
+    expect(getTaskByIdMock).toHaveBeenCalledWith('task-parent');
     expect(startDirectPtyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         providerConfigOverride: {

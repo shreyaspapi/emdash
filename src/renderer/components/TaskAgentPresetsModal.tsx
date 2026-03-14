@@ -121,6 +121,7 @@ export default function TaskAgentPresetsModal({
     normalizedAgentIds[0] ?? null
   );
   const [defaultsByAgent, setDefaultsByAgent] = useState<ProviderFormMap>({});
+  const [initialFormsByAgent, setInitialFormsByAgent] = useState<ProviderFormMap>({});
   const [formsByAgent, setFormsByAgent] = useState<ProviderFormMap>({});
   const [loading, setLoading] = useState(false);
 
@@ -156,6 +157,7 @@ export default function TaskAgentPresetsModal({
 
       if (cancelled) return;
       setDefaultsByAgent(nextDefaults);
+      setInitialFormsByAgent(nextForms);
       setFormsByAgent(nextForms);
       setLoading(false);
     })();
@@ -227,11 +229,11 @@ export default function TaskAgentPresetsModal({
   const hasChanges = useMemo(
     () =>
       normalizedAgentIds.some((agentId) => {
-        const defaults = defaultsByAgent[agentId];
+        const initialForm = initialFormsByAgent[agentId];
         const form = formsByAgent[agentId];
-        return !!defaults && !!form && !formsEqual(form, defaults);
+        return !!initialForm && !!form && !formsEqual(form, initialForm);
       }),
-    [defaultsByAgent, formsByAgent, normalizedAgentIds]
+    [formsByAgent, initialFormsByAgent, normalizedAgentIds]
   );
 
   const configuredCount = useMemo(
