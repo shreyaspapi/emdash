@@ -19,7 +19,7 @@ import { type Agent } from '../types';
 import { type AgentRun } from '../types/chat';
 import { agentMeta } from '../providers/meta';
 import type { ProviderCustomConfig } from '@shared/providers/customConfig';
-import { isValidProviderId, type ProviderId } from '@shared/providers/registry';
+import { isValidProviderId, PROVIDERS, type ProviderId } from '@shared/providers/registry';
 import { type LinearIssueSummary } from '../types/linear';
 import { type GitHubIssueSummary } from '../types/github';
 import { type JiraIssueSummary } from '../types/jira';
@@ -223,10 +223,14 @@ const TaskModal: React.FC<TaskModalProps> = ({ onClose, initialProject, onCreate
     () => (primaryPresetAgent ? (agentPresets[primaryPresetAgent]?.extraArgs ?? '') : ''),
     [agentPresets, primaryPresetAgent]
   );
-  const primaryModelOptions = useMemo(
-    () => (primaryPresetAgent ? getModelOptions(primaryPresetAgent) : []),
-    [primaryPresetAgent]
-  );
+  const primaryModelOptions = useMemo(() => {
+    if (!primaryPresetAgent) return [];
+    const provider = PROVIDERS.find(({ id }) => id === primaryPresetAgent);
+    return getModelOptions(primaryPresetAgent, [
+      agentPresets[primaryPresetAgent]?.defaultArgs,
+      provider?.defaultArgs?.join(' '),
+    ]);
+  }, [agentPresets, primaryPresetAgent]);
 
   const normalizedExisting = useMemo(
     () => existingNames.map((n) => normalizeTaskName(n)).filter(Boolean),

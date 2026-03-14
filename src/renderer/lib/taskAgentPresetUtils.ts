@@ -22,21 +22,6 @@ const MODEL_FLAG_CANDIDATES_BY_PROVIDER: Partial<Record<ProviderId, string[]>> =
   mistral: ['--model', '-m'],
 };
 
-const MODEL_OPTIONS_BY_PROVIDER: Partial<Record<ProviderId, string[]>> = {
-  codex: ['gpt-5', 'gpt-5-codex', 'gpt-5-mini'],
-  claude: ['claude-opus-4.1', 'claude-sonnet-4', 'claude-haiku-3.5'],
-  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-  qwen: ['qwen3-coder-plus', 'qwen3-coder'],
-  cursor: ['claude-sonnet-4', 'gpt-5', 'gemini-2.5-pro'],
-  copilot: ['gpt-5', 'claude-sonnet-4', 'gemini-2.5-pro'],
-  opencode: ['gpt-5', 'claude-sonnet-4', 'gemini-2.5-pro'],
-  amp: ['claude-sonnet-4', 'gpt-5', 'gemini-2.5-pro'],
-  cline: ['claude-sonnet-4', 'gpt-5', 'gemini-2.5-pro'],
-  continue: ['claude-sonnet-4', 'gpt-5', 'gemini-2.5-pro'],
-  codebuff: ['claude-sonnet-4', 'gpt-5', 'gemini-2.5-pro'],
-  mistral: ['mistral-medium', 'mistral-small'],
-};
-
 const UNSAFE_FLAGS = [
   '--full-auto',
   '--dangerously-skip-permissions',
@@ -67,10 +52,6 @@ function stripWrappingQuotes(value: string): string {
 
 function getModelFlags(providerId: ProviderId): string[] {
   return MODEL_FLAG_CANDIDATES_BY_PROVIDER[providerId] ?? ['--model', '-m'];
-}
-
-export function getModelOptions(providerId: ProviderId): string[] {
-  return MODEL_OPTIONS_BY_PROVIDER[providerId] ?? [];
 }
 
 export function extractModelFromArgs(providerId: ProviderId, args: string | undefined): string {
@@ -114,14 +95,30 @@ export function applyModelToArgs(
   return cleanWhitespace(`${stripped} --model ${trimmedModel}`);
 }
 
+export function getModelOptions(
+  providerId: ProviderId,
+  candidateArgs: Array<string | undefined>
+): string[] {
+  const options = new Set<string>();
+  for (const args of candidateArgs) {
+    const model = extractModelFromArgs(providerId, args);
+    if (model) options.add(model);
+  }
+  return [...options];
+}
+
 export function stripUnsafeFlags(args: string | undefined): string {
   const tokens = cleanWhitespace(args).split(' ').filter(Boolean);
   const filtered = tokens.filter((token) => !UNSAFE_FLAGS.includes(token));
   return filtered.join(' ');
 }
 
-export function getTemplateModel(providerId: ProviderId, template: PresetTemplateId): string {
-  const options = getModelOptions(providerId);
+export function getTemplateModel(
+  providerId: ProviderId,
+  template: PresetTemplateId,
+  candidateArgs: Array<string | undefined>
+): string {
+  const options = getModelOptions(providerId, candidateArgs);
   if (options.length === 0) return '';
   if (template === 'fast') return options[options.length - 1];
   if (template === 'deep') return options[0];

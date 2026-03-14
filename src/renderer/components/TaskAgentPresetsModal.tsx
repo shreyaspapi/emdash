@@ -262,8 +262,15 @@ export default function TaskAgentPresetsModal({
   const [useCustomModel, setUseCustomModel] = useState(false);
 
   const modelOptions = useMemo(
-    () => (selectedAgentId ? getModelOptions(selectedAgentId) : []),
-    [selectedAgentId]
+    () =>
+      selectedAgentId
+        ? getModelOptions(selectedAgentId, [
+            selectedForm?.defaultArgs,
+            selectedDefaults?.defaultArgs,
+            initialFormsByAgent[selectedAgentId]?.defaultArgs,
+          ])
+        : [],
+    [initialFormsByAgent, selectedAgentId, selectedDefaults?.defaultArgs, selectedForm?.defaultArgs]
   );
 
   const modelValue = useMemo(() => {
@@ -314,9 +321,13 @@ export default function TaskAgentPresetsModal({
     (templateId: PresetTemplateId) => {
       if (!selectedAgentId) return;
       updateSelectedForm((current) => {
-        const templateModel = getTemplateModel(selectedAgentId, templateId);
-        const nextDefaultArgs = templateModel
-          ? applyModelToArgs(selectedAgentId, current.defaultArgs, templateModel)
+        const nextModel = getTemplateModel(selectedAgentId, templateId, [
+          current.defaultArgs,
+          selectedDefaults?.defaultArgs,
+          initialFormsByAgent[selectedAgentId]?.defaultArgs,
+        ]);
+        const nextDefaultArgs = nextModel
+          ? applyModelToArgs(selectedAgentId, current.defaultArgs, nextModel)
           : current.defaultArgs;
         if (templateId === 'safe') {
           return {
@@ -339,7 +350,7 @@ export default function TaskAgentPresetsModal({
         };
       });
     },
-    [selectedAgentId, updateSelectedForm]
+    [initialFormsByAgent, selectedAgentId, selectedDefaults?.defaultArgs, updateSelectedForm]
   );
 
   const handleSave = useCallback(() => {
@@ -390,7 +401,7 @@ export default function TaskAgentPresetsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-agent-presets-title"
-        className="pointer-events-auto fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
+        className="pointer-events-auto fixed inset-0 z-[1200] flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
         initial={shouldReduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }}
@@ -407,9 +418,9 @@ export default function TaskAgentPresetsModal({
           transition={
             shouldReduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] }
           }
-          className="flex max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl"
+          className="flex h-[min(85vh,900px)] w-full max-w-4xl overflow-hidden rounded-2xl border border-border/50 bg-background shadow-2xl"
         >
-          <aside className="w-52 shrink-0 border-r border-border/60 bg-muted/20 p-4">
+          <aside className="flex max-h-full w-52 shrink-0 flex-col overflow-y-auto border-r border-border/60 bg-muted/20 p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 id="task-agent-presets-title" className="text-lg font-semibold">
@@ -460,7 +471,7 @@ export default function TaskAgentPresetsModal({
             </div>
           </aside>
 
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="border-b border-border/60 px-6 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
